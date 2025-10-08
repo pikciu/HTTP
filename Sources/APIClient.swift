@@ -43,12 +43,12 @@ public actor APIClient: HTTPClient {
     }
     
     private func executeAsync(request: any Request) async {
+        await isAuthorizingOrRefreshing.wait()
+        
         guard requests[request.id] != nil else {
             debugPrint("HTTP: finished request \(request.id)")
             return
         }
-        
-        await isAuthorizingOrRefreshing.wait()
         
         switch await tokenManager.state {
         case .valid(let jwt):
@@ -104,11 +104,6 @@ public actor APIClient: HTTPClient {
     }
     
     private func executeAuthorized(request: any Request, token: JWT) async {
-        guard requests[request.id] != nil else {
-            debugPrint("HTTP: request cancelled \(request.id)")
-            return
-        }
-        
         let authorizedRequest = AuthorizedRequest(request: request, token: token)
         do {
             debugPrint("HTTP: execute authorized request \(request.id)")

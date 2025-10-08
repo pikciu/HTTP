@@ -17,13 +17,13 @@ graph TD
     CheckQueue -->|NO| CreateQueue[Create queue + add continuation]
     
     AddCont --> Wait[Wait for result...]
-    CreateQueue --> TaskExec[Task executeAsync]
+    CreateQueue --> ExecuteAsync[executeAsync]
     
-    TaskExec --> CheckCancelled{requests id exists?}
+    ExecuteAsync --> WaitLock[AsyncLock.wait]
     CheckCancelled -->|NO| EndCancelled([Request finished])
-    CheckCancelled -->|YES| WaitLock[AsyncLock.wait]
+    CheckCancelled -->|YES| CheckToken{await tokenManager.state}
     
-    WaitLock --> CheckToken{await tokenManager.state}
+    WaitLock --> CheckCancelled{requests id exists?}
     
     CheckToken -->|VALID| ExecAuth[executeAuthorized]
     CheckToken -->|INVALID| RefreshFlow[refreshTokenThenExecute]
@@ -32,86 +32,55 @@ graph TD
     AuthFlow --> TryAuth[AsyncLock.tryExecute]
     RefreshFlow --> TryRefresh[AsyncLock.tryExecute]
     
-    TryAuth -->|Locked| ReExecute1[executeAsync again]
+    TryAuth -->|Locked| ExecuteAsync
     TryAuth -->|Unlocked| DoAuth[authorizationService.authorize]
     
-    TryRefresh -->|Locked| ReExecute2[executeAsync again]
+    TryRefresh -->|Locked| ExecuteAsync
     TryRefresh -->|Unlocked| DoRefresh[authorizationService.refreshToken]
     
-    DoAuth --> AuthResult{Success?}
-    DoRefresh --> RefreshResult{Success?}
+    DoAuth --> JWTResult{Success?}
+    DoRefresh --> JWTResult{Success?}
     
-    AuthResult -->|YES| SaveToken1[tokenManager.save + unlock]
-    AuthResult -->|NO| HandleAuthErr1[handleAuthorizationError + unlock]
+    JWTResult -->|YES| SaveToken[tokenManager.save + unlock]
+    JWTResult -->|NO| HandleAuthError[handleAuthorizationError + unlock]
     
-    RefreshResult -->|YES| SaveToken2[tokenManager.save + unlock]
-    RefreshResult -->|NO| HandleAuthErr2[handleAuthorizationError + unlock]
+    SaveToken --> ExecuteAsync
     
-    SaveToken1 --> ReExecute3[executeAsync again]
-    SaveToken2 --> ReExecute4[executeAsync again]
+    HandleAuthError --> HandleStrategy{errorHandler.handle}
     
-    HandleAuthErr1 --> HandleStrategy1{errorHandler.handle}
-    HandleAuthErr2 --> HandleStrategy2{errorHandler.handle}
+    HandleStrategy -->|PROPAGATE| ResumeError2([Throw HTTPError])
+    HandleStrategy -->|INVALIDATE or LOGOUT| ResumeAllError2([Throw HTTPError to all requests + reset])
     
-    HandleStrategy1 -->|PROPAGATE| Resume1[Resume request with error]
-    HandleStrategy1 -->|INVALIDATE or LOGOUT| ResumeAll1[Resume all + reset]
-    
-    HandleStrategy2 -->|PROPAGATE| Resume2[Resume request with error]
-    HandleStrategy2 -->|INVALIDATE or LOGOUT| ResumeAll2[Resume all + reset]
-    
-    ReExecute1 --> CheckCancelled
-    ReExecute2 --> CheckCancelled
-    ReExecute3 --> CheckCancelled
-    ReExecute4 --> CheckCancelled
-    
-    ExecAuth --> CheckCancelled2{requests id exists?}
-    CheckCancelled2 -->|NO| EndCancelled2([Request cancelled])
-    CheckCancelled2 -->|YES| CreateAuthReq[Create AuthorizedRequest]
+    ExecAuth --> CreateAuthReq[Create AuthorizedRequest]
     
     CreateAuthReq --> HTTPCall[httpClient.execute]
     
     HTTPCall --> HTTPResult{Result?}
     
-    HTTPResult -->|SUCCESS| ResumeSuccess[Resume with Response]
+    HTTPResult -->|SUCCESS| ResumeSuccess([Resume request with Response])
     HTTPResult -->|ERROR| HandleHTTPError{errorHandler.handle}
     
-    HandleHTTPError -->|PROPAGATE| Resume3[Resume with error]
-    HandleHTTPError -->|INVALIDATE_TOKEN| Invalidate[tokenManager.invalidate then executeAsync]
-    HandleHTTPError -->|LOGOUT| ResumeAll3[Resume all + reset]
+    HandleHTTPError -->|PROPAGATE| ResumeError1([Throw HTTPError])
+    HandleHTTPError -->|LOGOUT| ResumeAllError1([Throw HTTPError to all requests + reset])
+    HandleHTTPError -->|INVALIDATE_TOKEN| Invalidate[tokenManager.invalidate]
     
-    Invalidate --> CheckToken
-    
-    ResumeSuccess --> End1([Return Response])
-    Resume1 --> End2([Throw HTTPError])
-    Resume2 --> End3([Throw HTTPError])
-    Resume3 --> End4([Throw HTTPError])
-    ResumeAll1 --> End5([Throw HTTPError])
-    ResumeAll2 --> End6([Throw HTTPError])
-    ResumeAll3 --> End7([Throw HTTPError])
-    Wait --> End8([Receive result])
+    Invalidate --> ExecuteAsync
+
     
     style Start fill:#e1f5e1
-    style End1 fill:#e1f5e1
-    style End8 fill:#e1f5e1
-    style End2 fill:#ffe1e1
-    style End3 fill:#ffe1e1
-    style End4 fill:#ffe1e1
-    style End5 fill:#ffe1e1
-    style End6 fill:#ffe1e1
-    style End7 fill:#ffe1e1
+    style ResumeSuccess fill:#e1f5e1
+    style ResumeError1 fill:#ffe1e1
+    style ResumeError2 fill:#ffe1e1
+    style ResumeAllError1 fill:#ffe1e1
+    style ResumeAllError2 fill:#ffe1e1
     style EndCancelled fill:#ffd700
-    style EndCancelled2 fill:#ffd700
     
     style CheckQueue fill:#fff4e1
     style CheckToken fill:#fff4e1
     style HTTPResult fill:#fff4e1
-    style AuthResult fill:#fff4e1
-    style RefreshResult fill:#fff4e1
     style CheckCancelled fill:#fff4e1
-    style CheckCancelled2 fill:#fff4e1
+    style JWTResult fill:#fff4e1
     
-    style HandleStrategy1 fill:#ffcccc
-    style HandleStrategy2 fill:#ffcccc
     style HandleHTTPError fill:#ffcccc
     
     style WaitLock fill:#e1e5ff

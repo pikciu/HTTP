@@ -324,3 +324,19 @@ With `AsyncLock` preventing parallel authorize/refresh operations, the suspensio
 - ✅ Immutable struct (Sendable)
 - ✅ Clear state transitions
 - ❌ Extra field in JWT struct
+
+### Request Cancellation
+
+**Decision:** The package does NOT support explicit request cancellation.
+
+**Rationale:**
+- Requests are typically short-lived (network operations complete in seconds)
+- Cost of incomplete request is minimal (wasted bandwidth for remaining time)
+- Implementation complexity vs. benefit trade-off
+- Continuation must be resumed exactly once (cancellation adds complexity)
+
+**Current Behavior:**
+When a user navigates away from a screen:
+- Request continues executing in background
+- Response is received but discarded (no continuation to resume)
+- Minimal resource waste (typically < 1 second of execution)
